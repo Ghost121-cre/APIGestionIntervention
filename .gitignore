@@ -1,0 +1,17 @@
+﻿# Dossiers Visual Studio
+.vs/
+bin/
+obj/
+TestResults/
+Debug/
+Release/
+*.user
+*.suo
+*.cache
+*.log
+*.dbmdl
+*.pdb
+
+# Autres fichiers inutiles
+*.vsidx
+*.vscode/
