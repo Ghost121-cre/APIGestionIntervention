@@ -1,27 +1,31 @@
 ﻿using GestionIntervention.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json.Serialization;
-using Microsoft.Extensions.FileProviders; // Ajoutez ce using
+using GestionIntervention.Services;
+
+
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 🔹 Base de données
+
+// 📦 Configuration Services
+
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// 🔹 CORS - pour React (port 5173)
+// 🔓 CORS Global
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowReactApp", policy =>
+    options.AddPolicy("AllowAll", policy =>
     {
-        policy.WithOrigins("http://localhost:5173", "https://localhost:5173")
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials(); // Ajoutez cette ligne si vous utilisez l'authentification
+        policy
+            .SetIsOriginAllowed(origin => true) // Autorise toutes les origines
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 
-// 🔹 Configuration des contrôleurs avec gestion des cycles JSON
 builder.Services.AddControllers()
     .AddJsonOptions(x =>
     {
@@ -29,55 +33,54 @@ builder.Services.AddControllers()
         x.JsonSerializerOptions.WriteIndented = true;
     });
 
-// 🔹 Swagger (exploration API)
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddSingleton<EmailService>();
 
-// 🔹 ASSUREZ-VOUS QUE LE DOSSIER WWWROOT EXISTE
-// Cette ligne est implicite avec WebApplication.CreateBuilder()
 
 var app = builder.Build();
 
-// 🔹 Middleware
+
+// 🚀 Pipeline Middleware
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-app.UseCors("AllowReactApp");
+// ⚙️ Appliquer CORS avant tout
+app.UseCors("AllowAll");
 
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
 
-// 🔹 AJOUTEZ CES LIGNES POUR LES FICHIERS STATIQUES
-app.UseStaticFiles(); // Active la gestion des fichiers statiques depuis wwwroot
-
-// 🔹 Configuration spécifique pour le dossier uploads
-var uploadsPath = Path.Combine(app.Environment.WebRootPath ?? app.Environment.ContentRootPath, "uploads");
-if (!Directory.Exists(uploadsPath))
+// 🖼️ Autoriser CORS aussi pour les fichiers statiques
+app.UseStaticFiles(new StaticFileOptions
 {
-    Directory.CreateDirectory(uploadsPath);
-    Console.WriteLine($"📁 Dossier uploads créé: {uploadsPath}");
-}
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers.Append("Access-Control-Allow-Origin", "*");
+        ctx.Context.Response.Headers.Append("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+        ctx.Context.Response.Headers.Append("Access-Control-Allow-Methods", "GET, OPTIONS");
+    }
+});
+
+var uploadsPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
 
 app.UseStaticFiles(new StaticFileOptions
 {
-    FileProvider = new PhysicalFileProvider(
-        Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads")),
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(uploadsPath),
     RequestPath = "/uploads",
-    ServeUnknownFileTypes = true // Permet de servir tous les types de fichiers
+    ServeUnknownFileTypes = true, // autorise les extensions non reconnues
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers.Append("Access-Control-Allow-Origin", "*");
+        ctx.Context.Response.Headers.Append("Cache-Control", "no-cache");
+    }
 });
 
-// Dans Program.cs, ajoutez cette configuration
-app.UseStaticFiles(new StaticFileOptions
-{
-    FileProvider = new PhysicalFileProvider(
-        Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "interventions")),
-    RequestPath = "/uploads/interventions"
-});
 
 app.UseAuthorization();
-
 app.MapControllers();
 
 app.Run();

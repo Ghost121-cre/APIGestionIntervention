@@ -1,167 +1,78 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using GestionIntervention.Data;
-using GestionIntervention.Models;
-using Microsoft.AspNetCore.Hosting;
+using System.IO;
 
 namespace GestionIntervention.Controllers
 {
-    [Route("api/interventions/{interventionId}/[controller]")]
+    [Route("api/[controller]")]
     [ApiController]
     public class InterventionImagesController : ControllerBase
     {
-        private readonly ApplicationDbContext _context;
-        private readonly IWebHostEnvironment _environment;
+        private readonly IWebHostEnvironment _env;
 
-        public InterventionImagesController(ApplicationDbContext context, IWebHostEnvironment environment)
+        public InterventionImagesController(IWebHostEnvironment env)
         {
-            _context = context;
-            _environment = environment;
+            _env = env;
         }
 
-        [HttpPost]
-        public async Task<ActionResult<InterventionImage>> UploadImage(int interventionId, IFormFile file)
+        // 📤 Endpoint pour uploader une image liée à une intervention
+        [HttpPost("upload/{interventionId}")]
+        public async Task<IActionResult> UploadImage(int interventionId, IFormFile image)
         {
-            try
+            if (image == null || image.Length == 0)
+                return BadRequest("Aucune image reçue.");
+
+            // Dossier cible
+            var uploadDir = Path.Combine(_env.WebRootPath, "uploads", "interventions");
+            if (!Directory.Exists(uploadDir))
+                Directory.CreateDirectory(uploadDir);
+
+            // Générer un nom de fichier unique
+            var fileName = $"{Guid.NewGuid()}{Path.GetExtension(image.FileName)}";
+            var filePath = Path.Combine(uploadDir, fileName);
+
+            // Sauvegarde du fichier
+            using (var stream = new FileStream(filePath, FileMode.Create))
             {
-                Console.WriteLine($"📸 Début upload image pour intervention {interventionId}");
-
-                // Vérifier que l'intervention existe
-                var intervention = await _context.Interventions.FindAsync(interventionId);
-                if (intervention == null)
-                {
-                    Console.WriteLine($"❌ Intervention {interventionId} non trouvée");
-                    return NotFound($"Intervention {interventionId} non trouvée");
-                }
-
-                // Validation du fichier
-                if (file == null || file.Length == 0)
-                    return BadRequest("Fichier vide");
-
-                if (file.Length > 5 * 1024 * 1024) // 5MB
-                    return BadRequest("Fichier trop volumineux (max 5MB)");
-
-                var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif" };
-                var fileExtension = Path.GetExtension(file.FileName).ToLowerInvariant();
-                if (!allowedExtensions.Contains(fileExtension))
-                    return BadRequest("Type de fichier non autorisé");
-
-                // Création garantie des dossiers
-                var basePath = Directory.GetCurrentDirectory();
-                var wwwrootPath = Path.Combine(basePath, "wwwroot");
-
-                // Créer wwwroot s'il n'existe pas
-                if (!Directory.Exists(wwwrootPath))
-                {
-                    Directory.CreateDirectory(wwwrootPath);
-                    Console.WriteLine($"📁 Dossier wwwroot créé: {wwwrootPath}");
-                }
-
-                var uploadsPath = Path.Combine(wwwrootPath, "uploads");
-                if (!Directory.Exists(uploadsPath))
-                {
-                    Directory.CreateDirectory(uploadsPath);
-                    Console.WriteLine($"📁 Dossier uploads créé: {uploadsPath}");
-                }
-
-                var interventionsUploadsPath = Path.Combine(uploadsPath, "interventions");
-                if (!Directory.Exists(interventionsUploadsPath))
-                {
-                    Directory.CreateDirectory(interventionsUploadsPath);
-                    Console.WriteLine($"📁 Dossier interventions créé: {interventionsUploadsPath}");
-                }
-
-                Console.WriteLine($"📁 Chemin de sauvegarde final: {interventionsUploadsPath}");
-
-                // Créer un nom de fichier unique
-                var fileName = $"{Guid.NewGuid()}{fileExtension}";
-                var filePath = Path.Combine(interventionsUploadsPath, fileName);
-
-                // Sauvegarder le fichier
-                using (var stream = new FileStream(filePath, FileMode.Create))
-                {
-                    await file.CopyToAsync(stream);
-                }
-
-                Console.WriteLine($"💾 Fichier sauvegardé: {filePath}");
-
-                // Créer l'entrée en base de données
-                var interventionImage = new InterventionImage
-                {
-                    InterventionId = interventionId,
-                    NomFichier = fileName,
-                    Chemin = $"/uploads/interventions/{fileName}",
-                    DateUpload = DateTime.UtcNow
-                };
-
-                _context.InterventionImages.Add(interventionImage);
-                await _context.SaveChangesAsync();
-
-                Console.WriteLine($"✅ Image uploadée avec ID: {interventionImage.Id}");
-
-                return Ok(new
-                {
-                    id = interventionImage.Id,
-                    nomFichier = interventionImage.NomFichier,
-                    chemin = interventionImage.Chemin,
-                    dateUpload = interventionImage.DateUpload
-                });
+                await image.CopyToAsync(stream);
             }
-            catch (Exception ex)
+
+            // Ici tu peux sauvegarder en BDD le lien avec l'intervention si besoin
+
+            return Ok(new
             {
-                Console.WriteLine($"💥 Erreur upload image: {ex.Message}");
-                Console.WriteLine($"Stack trace: {ex.StackTrace}");
-                return StatusCode(500, $"Erreur interne: {ex.Message}");
-            }
+                FileName = fileName,
+                Url = $"{Request.Scheme}://{Request.Host}/api/InterventionImages/serve-image/{fileName}"
+            });
         }
 
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<InterventionImage>>> GetImages(int interventionId)
+        // 📷 Endpoint pour servir une image d’intervention
+        [HttpGet("serve-image/{filename}")]
+        public IActionResult ServeImage(string filename)
         {
-            try
-            {
-                var images = await _context.InterventionImages
-                    .Where(img => img.InterventionId == interventionId)
-                    .ToListAsync();
+            if (string.IsNullOrEmpty(filename))
+                return BadRequest("Nom de fichier manquant.");
 
-                return Ok(images);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"💥 Erreur récupération images: {ex.Message}");
-                return StatusCode(500, $"Erreur interne: {ex.Message}");
-            }
+            var filePath = Path.Combine(_env.WebRootPath, "uploads", "interventions", filename);
+
+            if (!System.IO.File.Exists(filePath))
+                return NotFound("Image introuvable.");
+
+            var contentType = GetContentType(filePath);
+            var image = System.IO.File.OpenRead(filePath);
+            return File(image, contentType);
         }
 
-        [HttpDelete("{imageId}")]
-        public async Task<IActionResult> DeleteImage(int interventionId, int imageId)
+        // 🔍 Détecte le bon type MIME selon l’extension
+        private string GetContentType(string path)
         {
-            try
+            var ext = Path.GetExtension(path).ToLowerInvariant();
+            return ext switch
             {
-                var image = await _context.InterventionImages
-                    .FirstOrDefaultAsync(img => img.Id == imageId && img.InterventionId == interventionId);
-
-                if (image == null)
-                    return NotFound();
-
-                // Supprimer le fichier physique
-                var filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "interventions", image.NomFichier);
-                if (System.IO.File.Exists(filePath))
-                {
-                    System.IO.File.Delete(filePath);
-                }
-
-                // Supprimer de la base
-                _context.InterventionImages.Remove(image);
-                await _context.SaveChangesAsync();
-
-                return NoContent();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"💥 Erreur suppression image: {ex.Message}");
-                return StatusCode(500, $"Erreur interne: {ex.Message}");
-            }
+                ".jpg" or ".jpeg" => "image/jpeg",
+                ".png" => "image/png",
+                ".gif" => "image/gif",
+                _ => "application/octet-stream"
+            };
         }
     }
 }

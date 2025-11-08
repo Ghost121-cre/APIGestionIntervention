@@ -1,7 +1,11 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using GestionIntervention.Data;
+﻿using GestionIntervention.Data;
+using GestionIntervention.Dtos.Client;
+using GestionIntervention.Dtos.Intervention;
+using GestionIntervention.Dtos.Rapport;
+using GestionIntervention.DTOs.Rapport;
 using GestionIntervention.Models;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace GestionIntervention.Controllers
 {
@@ -17,14 +21,39 @@ namespace GestionIntervention.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Rapport>>> GetRapports()
+        public async Task<ActionResult<IEnumerable<RapportDto>>> GetRapports()
         {
             var rapports = await _context.Rapports
                 .Include(r => r.Intervention!)
                 .ThenInclude(i => i!.Client)
                 .ToListAsync();
 
-            return Ok(rapports);
+            var rapportDtos = rapports.Select(r => new RapportDto
+            {
+                Id = r.Id,
+                InterventionId = r.InterventionId,
+                DateRapport = r.DateRapport,
+                Client = r.Client,
+                Intervenant = string.IsNullOrEmpty(r.Intervenant)
+                    ? new List<string>()
+                    : r.Intervenant.Split(',').Select(x => x.Trim()).ToList(),
+                TypeIntervention = r.TypeIntervention,
+                Description = r.Description,
+                Observations = r.Observations,
+                TravauxEffectues = r.TravauxEffectues,
+                Intervention = r.Intervention != null ? new InterventionDto
+                {
+                    Id = r.Intervention.Id,
+                    Description = r.Intervention.Description,
+                    Client = r.Intervention.Client != null ? new ClientDto
+                    {
+                        Id = r.Intervention.Client.Id,
+                        Nom = r.Intervention.Client.Nom
+                    } : null
+                } : null
+            });
+
+            return Ok(rapportDtos);
         }
 
         [HttpGet("{id}")]
@@ -42,36 +71,63 @@ namespace GestionIntervention.Controllers
         }
 
         [HttpPost]
-        public async Task<ActionResult<Rapport>> PostRapport(Rapport rapport)
+        public async Task<ActionResult<RapportDto>> PostRapport(CreateRapportDto createRapportDto)
         {
-            // Validation des données
-            if (rapport == null)
-                return BadRequest(new { message = "Les données du rapport sont invalides" });
-
-            if (string.IsNullOrWhiteSpace(rapport.Description))
-                return BadRequest(new { message = "La description est requise" });
-
-            if (string.IsNullOrWhiteSpace(rapport.Client))
-                return BadRequest(new { message = "Le client est requis" });
-
-            if (string.IsNullOrWhiteSpace(rapport.Intervenant))
-                return BadRequest(new { message = "L'intervenant est requis" });
-
-            if (string.IsNullOrWhiteSpace(rapport.TypeIntervention))
-                return BadRequest(new { message = "Le type d'intervention est requis" });
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
             try
             {
+                var rapport = new Rapport
+                {
+                    InterventionId = createRapportDto.InterventionId,
+                    DateRapport = createRapportDto.DateRapport,
+                    Client = createRapportDto.Client,
+                    Intervenant = createRapportDto.Intervenant != null && createRapportDto.Intervenant.Any()
+                        ? string.Join(", ", createRapportDto.Intervenant)
+                        : "",
+                    TypeIntervention = createRapportDto.TypeIntervention,
+                    Description = createRapportDto.Description,
+                    Observations = createRapportDto.Observations,
+                    TravauxEffectues = createRapportDto.TravauxEffectues
+                };
+
                 _context.Rapports.Add(rapport);
                 await _context.SaveChangesAsync();
 
-                // Recharger le rapport avec les relations
+                // Retourner le DTO avec les relations
                 var rapportAvecRelations = await _context.Rapports
                     .Include(r => r.Intervention!)
                     .ThenInclude(i => i!.Client)
                     .FirstOrDefaultAsync(r => r.Id == rapport.Id);
 
-                return CreatedAtAction(nameof(GetRapport), new { id = rapport.Id }, rapportAvecRelations);
+                if (rapportAvecRelations == null)
+                {
+                    return NotFound(new { message = "Rapport non trouvé après création" });
+                }
+
+                var rapportDto = new RapportDto
+                {
+                    Id = rapportAvecRelations.Id,
+                    InterventionId = rapportAvecRelations.InterventionId,
+                    DateRapport = rapportAvecRelations.DateRapport,
+                    Client = rapportAvecRelations.Client,
+                    Intervenant = string.IsNullOrEmpty(rapportAvecRelations.Intervenant)
+                        ? new List<string>()
+                        : rapportAvecRelations.Intervenant.Split(',').Select(x => x.Trim()).ToList(),
+                    TypeIntervention = rapportAvecRelations.TypeIntervention,
+                    Description = rapportAvecRelations.Description,
+                    Observations = rapportAvecRelations.Observations,
+                    TravauxEffectues = rapportAvecRelations.TravauxEffectues,
+                    Intervention = rapportAvecRelations.Intervention != null ? new InterventionDto
+                    {
+                        Id = rapportAvecRelations.Intervention.Id,
+                        Description = rapportAvecRelations.Intervention.Description,
+                        // ... autres propriétés
+                    } : null
+                };
+
+                return CreatedAtAction(nameof(GetRapport), new { id = rapport.Id }, rapportDto);
             }
             catch (DbUpdateException ex)
             {
@@ -101,7 +157,7 @@ namespace GestionIntervention.Controllers
                 return BadRequest(new { message = "Le client est requis" });
 
             if (string.IsNullOrWhiteSpace(rapport.Intervenant))
-                return BadRequest(new { message = "L'intervenant est requise" });
+                return BadRequest(new { message = "L'intervenant est requis" });
 
             if (string.IsNullOrWhiteSpace(rapport.TypeIntervention))
                 return BadRequest(new { message = "Le type d'intervention est requis" });

@@ -35,6 +35,7 @@ namespace GestionIntervention.Controllers
         [HttpPost]
         public async Task<ActionResult<Utilisateur>> PostUtilisateur(Utilisateur utilisateur)
         {
+            
             _context.Utilisateurs.Add(utilisateur);
             await _context.SaveChangesAsync();
 

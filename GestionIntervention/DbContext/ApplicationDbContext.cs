@@ -33,7 +33,10 @@ namespace GestionIntervention.Data
                 .HasOne(i => i.Produit)
                 .WithMany(p => p.Incidents)
                 .HasForeignKey(i => i.ProduitId)
-                .OnDelete(DeleteBehavior.Restrict);
+                .OnDelete(DeleteBehavior.Cascade);
+
+            base.OnModelCreating(modelBuilder);
+
 
             modelBuilder.Entity<IncidentImage>()
                 .HasOne(ii => ii.Incident)
@@ -78,19 +81,6 @@ namespace GestionIntervention.Data
                 .WithMany(iv => iv.Rapports)
                 .HasForeignKey(r => r.InterventionId)
                 .OnDelete(DeleteBehavior.Cascade);
-
-            // StatutIntervention
-            modelBuilder.Entity<StatutIntervention>()
-                .HasOne(si => si.Intervention)
-                .WithMany(iv => iv.Statuts)
-                .HasForeignKey(si => si.InterventionId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            modelBuilder.Entity<StatutIntervention>()
-                .HasOne(si => si.Utilisateur)
-                .WithMany(u => u.StatutsInterventions)
-                .HasForeignKey(si => si.UtilisateurId)
-                .OnDelete(DeleteBehavior.Restrict);
 
             // Notification
             modelBuilder.Entity<Notification>()

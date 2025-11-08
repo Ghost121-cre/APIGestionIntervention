@@ -24,6 +24,5 @@ namespace GestionIntervention.Models
 
         public ICollection<InterventionImage>? Images { get; set; }
         public ICollection<Rapport>? Rapports { get; set; }
-        public ICollection<StatutIntervention>? Statuts { get; set; }
     }
 }

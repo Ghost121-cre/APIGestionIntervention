@@ -14,15 +14,18 @@ namespace GestionIntervention.Models
 
         [Required]
         [MaxLength(255)]
-        public required string NomFichier { get; set; }
+        public string NomFichier { get; set; } = string.Empty;
 
         [Required]
         [MaxLength(500)]
-        public required string Chemin { get; set; }
+        public string Chemin { get; set; } = string.Empty;
 
-        public DateTime DateUpload { get; set; } = DateTime.Now;
+        [MaxLength(500)]
+        public string? AltText { get; set; }
 
-        // 🔗 Relation
+        public DateTime DateCreation { get; set; } = DateTime.UtcNow;
+
+        // Relation
         public Intervention? Intervention { get; set; }
     }
 }
